@@ -37,6 +37,13 @@ app.use(express.json());
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
+app.param("colecciones", (request,response,next,colecciones)=>{
+    console.log('middleware param /api/:colecciones');
+    request.collection =db.collection(colecciones);
+    return next();
+ });
+ 
+
 function auth(request,response,next){
 
     if(!request.params.id){
@@ -136,13 +143,13 @@ function createHashSalt(request,response,next){
             request.body.password = hash;
             var collection = db.collection("agencias");
             collection.save({user: request.body.user,password: hash, token: null}, (err, elementoGuardado) =>{
-            if (err) return next(err);
-    
-            console.log(elementoGuardado);
-            response.status(201).json({
-                result: 'OK',
-                elemento: elementoGuardado
-            });
+                if (err) return next(err);
+        
+                console.log(elementoGuardado);
+                response.status(201).json({
+                    result: 'OK',
+                    elemento: elementoGuardado
+                });
         });
         }
     });
@@ -229,6 +236,21 @@ app.get('/api', (request, response, next) =>{
 
 });
 
+app.get('/api/reserva/:id', (request, response, next) => {
+ 
+    const queID = request.params.id;
+  
+    var collection = db.collection("reserva");//guardar por id
+  
+    collection.find({_id: id(queID)},(err,elemento)=>{
+        if(err) response.json(`Id: ${queID}, no tiene reservas`);
+  
+        response.json(elemento);
+    });
+  
+ });
+ 
+
 app.get('/api/:proveedores', (request,response,next) =>{
     const queProveedor = request.params.proveedores;
     //const queURL = `${URL_WS}/${queColeccion}`;
@@ -306,11 +328,84 @@ app.post('/api/:proveedores/:reserva/', auth,(request,response,next) =>{
 
 });*/
 
+app.post('/api/:proveedores/:colecciones/:id/:idProv', auth,(request,response,next) => {
+ 
+    const queColeccion = request.params.colecciones;
+    const nuevoElemento = {
+        idProveedor: request.params.idProv,
+        idUsuario: request.params.id
+    };
+    const queToken = request.params.token;
+    var queURL = isProveedor(request,response,next);
+    //const newURL = queURL + `/${idProveedor}`;//para comprobar el proveedor si existe
+    console.log(queURL);
+  
+    if(queColeccion == "reserva"){
+       
+        const idUsuario = request.params.id;
+        const idProveedor = request.params.idProv;
+       
+        //buscar en bbdd usuario
+        //var collection = db.col
+        request.collection.findOne({_id: id(idUsuario)},(err,elemento)=>{
+            if(err)
+                response.json(`Error: id de Usuario no existe`);
+            else
+                console.log(elemento);
+        });
+       
+        const newURL = queURL + `/${idProveedor}`;//para comprobar el proveedor si existe
+  
+        fetch( newURL )//buscar en bbdd proveedor
+            .then( response=>response.json() )
+            .then( json => {
+            console.log(json.elemento);
+        }); 
+    }else{
+        response.json(`End-point inválido`);
+    }
+  
+    fetch( queURL, {
+        method: 'POST',
+        body: JSON.stringify(nuevoElemento),
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${queToken}`
+        }   
+    } )
+        .then( response=>response.json() )
+        .then( json => {
+            //Mi logica de negocio
+            console.log( {
+                result: 'OK',
+                colecciones: queColeccion,
+                elemento: json.elemento
+            });
+            console.log(json.elemento._id);
+  
+            //guardamos reserva en bbdd agencia
+  
+            var collection = db.collection("reserva");
+            collection.save({_id: id(request.params.id),idReserva: json.elemento._id}, (err, elementoGuardado) =>{
+                if (err) return next(err);
+       
+                console.log(elementoGuardado);
+                response.status(201).json({
+                    result: 'OK',
+                    elemento: elementoGuardado
+                });
+            });
+    }); 
+  
+ });
+ 
+
 app.post('/api/:proveedores/:colecciones/:id', auth,(request,response,next) =>{
     const nuevoElemento = request.body;
     const queColeccion = request.params.colecciones;
     var queURL = isProveedor(request,response,next);
     const queToken = request.params.token;
+
     fetch( queURL, {
         method: 'POST',
         body: JSON.stringify(nuevoElemento),
