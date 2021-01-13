@@ -99,19 +99,43 @@ app.get('/api/:colecciones/:id', (request,response,next) =>{
 app.post('/api/:colecciones', auth,(request,response,next) =>{
     const nuevoElemento = request.body;
     const queColeccion = request.params.colecciones;
-    
-    request.collection.save(nuevoElemento, (err, elementoGuardado) =>{
-        if (err) return next(err);
-
-        console.log(elementoGuardado);
-        response.status(201).json({
-            result: 'OK',
-            coleccion: queColeccion,
-            elemento: elementoGuardado
+  
+    if(queColeccion == "reserva"){
+        console.log(nuevoElemento.idProveedor);
+        const queID = JSON.stringify(nuevoElemento.idProveedor);
+        console.log(queID);
+        request.collection.findOne({"idProveedor": nuevoElemento.idProveedor},(err,elemento)=>{
+           
+            if(elemento != null && elemento.idProveedor == nuevoElemento.idProveedor){
+                response.json(`Error: reserva ya realizada`);
+            }else{
+                request.collection.save(nuevoElemento, (err, elementoGuardado) =>{
+                    if (err) return next(err);
+           
+                    console.log(elementoGuardado);
+                    response.status(201).json({
+                        result: 'OK',
+                        coleccion: queColeccion,
+                        elemento: elementoGuardado
+                    });
+                });
+            }
         });
-    });
-});
-
+    }else{
+        request.collection.save(nuevoElemento, (err, elementoGuardado) =>{
+            if (err) return next(err);
+   
+            console.log(elementoGuardado);
+            response.status(201).json({
+                result: 'OK',
+                coleccion: queColeccion,
+                elemento: elementoGuardado
+            });
+        });
+    }
+   
+  
+ });
 app.put('/api/:colecciones/:id', auth, (request,response,next) =>{
     const queColeccion = request.params.colecciones;
     const nuevosDatos = request.body;
