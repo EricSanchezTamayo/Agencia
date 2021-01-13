@@ -7,6 +7,7 @@ const port = process.env.PORT || 3100;
 const URL_WS_VUELO = 'https://localhost:3000/api';
 const URL_WS_VEHICULO = 'https://localhost:3001/api';
 const URL_WS_HOTEL = 'https://localhost:3002/api';
+const URL_WS_BANCO = 'https://localhost:3003/api';
 
 const express = require('express');
 const logger = require('morgan');
@@ -54,19 +55,23 @@ function auth(request,response,next){
         return next(new Error("Falta id usuario"));
     }
     var collection = db.collection("agencias");
-    collection.findOne({_id: id(request.params.id)}, (err,elemento)=>{
-        if(err) response.json(`Id: ${request.params.id}, no valida`);
-        console.log(elemento);
-        TokenService.decodificaToken(elemento.token)
-        .then(userId=>{
-            console.log(`Usuario con ID: ${userId} autorizado`);
-        })
-        .catch(err => response.status(401).json({
-            result: 'KO',
-            mensaje: "Error autorizacion: Token caducado, debe identificarse nuevamente"
-        })
-        );
-    });
+    try{
+        collection.findOne({_id: id(request.params.id)}, (err,elemento)=>{
+            if(err) response.json(`Id: ${request.params.id}, no valida`);
+            console.log(elemento);
+            TokenService.decodificaToken(elemento.token)
+            .then(userId=>{
+                console.log(`Usuario con ID: ${userId} autorizado`);
+            })
+            .catch(err => response.status(401).json({
+                result: 'KO',
+                mensaje: "Error autorizacion: Token caducado, debe identificarse nuevamente"
+            })
+            );
+        });
+    }catch(error){
+        response.json(`Id: ${request.params.id}, no valida`);
+    }
 
     if(!request.headers.authorization){
         response.status(401).json({
@@ -160,20 +165,43 @@ function verifyPassword(hash, request,response,next){
         console.log(`${hash}`);
         console.log(`Result: ${result}`);
 
-        if(result)
+        if(result){
             console.log(`Contraseña correcta`);
+            //Creamos un token
+            const token = TokenService.creaToken(request.params.id);
+        
+            console.log(token);
+            console.log(`Usuario y contraseña correctos`);
+            //Decodificar un token
+            TokenService.decodificaToken(token)
+                .then(userId =>{
+                    console.log(`Usuario con ID: ${userId} autenticado y autorizado correctamente`);
+                })
+                .catch(err => response.json(`Token caducado`));
+        
+            var collection = db.collection("agencias");//guardar por id
+            collection.update({_id: id(request.params.id)}, {$set: {token: token}}, function(err, elementoGuardado) {
+            if (err || !elementoGuardado) response.json("user not updated");
+            else response.json("user updated");
+    });
+        }
         else
             response.json(`Contraseña invalida`);
     });
 }
 
 //REGISTRAR USUARIO DE AGENCIA
-app.post('/api/registrar', (request, response, next) => {
- 
-    const user = request.body;
-   
-    createHashSalt(request, response, next);
-  
+app.post('/api/registrar', (request, response, next) => { 
+    var collection = db.collection("agencias");
+    const user = request.body.user;
+    
+    collection.findOne({"user": user}, (err,elemento)=>{
+        
+        if(elemento!=null && elemento.user == user)
+            response.json(`Error: Usuario ${user} ya existente`);
+        else
+            createHashSalt(request, response, next);
+    });
     
  });
  
@@ -192,22 +220,96 @@ app.post('/api/registrar', (request, response, next) => {
     });
   
   
-    //Creamos un token
-    const token = TokenService.creaToken(request.params.id);
+    
+ });
+
+ 
+ app.put('/api/banco/:colecciones/:id/:idReserva', auth, (request,response,next) =>{
+ 
+    const cuentaBancaria = request.body.cuenta;
+    const pin = request.body.pin;
+    const queColeccion = request.params.colecciones;
+    const queURL  = `${URL_WS_BANCO}` + `/${request.params.colecciones}` + `/${cuentaBancaria}/`;
+    const queToken = request.params.token;
+    console.log(request.body.pin)
+    ////comprobar que id se corresponde con idProveedor
+    var proveedor;
   
-    console.log(token);
-    console.log(`Usuario y contraseña correctos`);
-    //Decodificar un token
-    TokenService.decodificaToken(token)
-        .then(userId =>{
-            console.log(`Usuario con ID: ${userId} autenticado y autorizado correctamente`);
-        })
-        .catch(err => response.json(`Token caducado`));
+    var collection = db.collection("reserva");//guardar por id
   
-    var collection = db.collection("agencias");//guardar por id
-    collection.update({_id: id(queID)}, {$set: {token: token}}, function(err, elementoGuardado) {
-        if (err || !elementoGuardado) response.json("user not updated");
-        else response.json("user updated");
+    collection.findOne({_id: id(request.params.idReserva)},(err,elemento)=>{
+        if(err)
+            response.json(`Id: ${queID}, no es válida`);
+        else{
+            proveedor = elemento.proveedor;
+            console.log(request.params.id);
+            console.log(elemento.idUsuario);
+  
+            if(elemento != null && request.params.id == elemento.idUsuario){
+  
+                const nuevoElemento = {
+                    precio: elemento.precio,
+                    pin: request.body.pin
+                }
+  
+                fetch( queURL, {
+                    method: 'PUT',
+                    body: JSON.stringify(nuevoElemento),
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${queToken}`
+                    }   
+                } )
+                    .then( response=>response.json() )
+                    .then( json => {
+  
+  
+                        //Borrar las reservas
+                        collection.remove(
+                            {_id: id(request.params.idReserva)},
+                            (err,resultado)=>{
+                                if (err) return next(err);
+                                console.log("Agencia: Reserva Borrada")
+                        });
+                       
+                        var newURL;
+                        switch(proveedor){
+                            case "vuelo":
+                                newURL  = `${URL_WS_VUELO}` + `/reserva` + `/${request.params.idReserva}/`;
+                                break;
+                            case "vehiculo":
+                                newURL  = `${URL_WS_VEHICULO}`+ `/reserva` + `/${request.params.idReserva}/`;
+                                break;
+                            case "hotel":
+                                newURL  = `${URL_WS_HOTEL}`+ `/reserva` + `/${request.params.idReserva}/`;
+                                break;
+                            default:
+                                response.json(`End-Point inválido: ${request.params.idReserva} no existe`);
+                        }
+  
+                        fetch( newURL, {
+                            method: 'DELETE',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${queToken}`
+                            }   
+                        } )
+                            .then( response=>response.json() )
+                            .then( json => {
+                                console.log("Proveedor: Reserva Borrada")
+                        });
+                       
+  
+                        response.json( {
+                            result: json
+                        });
+                }); 
+  
+            }else{
+                response.json(`Error: este usuario no ha realizado la reserva`);
+            }
+            //response.json(elemento);
+        }
     });
  });
  
@@ -242,7 +344,7 @@ app.get('/api/reserva/:id', (request, response, next) => {
   
     var collection = db.collection("reserva");//guardar por id
   
-    collection.find({_id: id(queID)},(err,elemento)=>{
+    collection.find({"idUsuario": id(queID)},(err,elemento)=>{
         if(err) response.json(`Id: ${queID}, no tiene reservas`);
   
         response.json(elemento);
@@ -331,73 +433,97 @@ app.post('/api/:proveedores/:reserva/', auth,(request,response,next) =>{
 app.post('/api/:proveedores/:colecciones/:id/:idProv', auth,(request,response,next) => {
  
     const queColeccion = request.params.colecciones;
-    const nuevoElemento = {
-        idProveedor: request.params.idProv,
-        idUsuario: request.params.id
-    };
+    
     const queToken = request.params.token;
     var queURL = isProveedor(request,response,next);
     //const newURL = queURL + `/${idProveedor}`;//para comprobar el proveedor si existe
     console.log(queURL);
-  
+    var newURL;
+    switch(request.params.proveedores){
+        case "vuelo":
+            newURL = `${URL_WS_VUELO}` + '/vuelos' `/${request.params.idProv}/`;
+            break;
+        case "coche":
+            newURL = `${URL_WS_VEHICULO}` + '/coches' `/${request.params.idProv}/`;;
+            break;
+        case "hotel":
+            newURL = `${URL_WS_HOTEL}` + '/hoteles' `/${request.params.idProv}/`;;
+            break;
+        default:
+            response.json(`End-Point invalido: ${request.params.proveedores} no existe`);
+    }
+
     if(queColeccion == "reserva"){
        
         const idUsuario = request.params.id;
         const idProveedor = request.params.idProv;
        
         //buscar en bbdd usuario
-        //var collection = db.col
-        request.collection.findOne({_id: id(idUsuario)},(err,elemento)=>{
-            if(err)
-                response.json(`Error: id de Usuario no existe`);
-            else
-                console.log(elemento);
-        });
-       
-        const newURL = queURL + `/${idProveedor}`;//para comprobar el proveedor si existe
+        var collection = db.collection("agencias");
   
-        fetch( newURL )//buscar en bbdd proveedor
-            .then( response=>response.json() )
-            .then( json => {
-            console.log(json.elemento);
-        }); 
+        collection.findOne({_id: id(idUsuario)},(err,elemento)=>{
+            if(elemento == null)
+                response.json(`Error: id de Usuario no existe`);
+            else{
+                console.log(elemento);
+       
+                const newURL = queURL + `/${idProveedor}`;//para comprobar el proveedor si existe
+  
+                fetch( newURL )//buscar en bbdd proveedor
+                    .then( response=>response.json() )
+                    .then( json => {
+                    console.log(json.elemento);
+                   
+                    const nuevoElemento = {
+                        idProveedor: request.params.idProv,
+                        idUsuario: request.params.id,
+                        precio: json.elementos.precio
+                    };
+
+                    fetch( queURL, {
+                        method: 'POST',
+                        body: JSON.stringify(nuevoElemento),
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${queToken}`
+                        }   
+                    } )
+                        .then( response=>response.json() )
+                        .then( json => {
+                            //Mi logica de negocio
+                            if(json.elemento == null)
+                                response.json(json);
+                            console.log( {
+                                result: 'OK',
+                                colecciones: queColeccion,
+                                elemento: json.elemento
+                            });
+                            console.log(json.elemento._id);
+               
+                            //guardamos reserva en bbdd agencia
+               
+                            var collection = db.collection("reserva");
+                            collection.save({_id: id(json.elemento._id),idUsuario: request.params.id, proveedor: request.params.proveedores, precio: json.elemento.precio}, (err, elementoGuardado) =>{
+                                if (err) return next(err);
+                       
+                                console.log(elementoGuardado);
+                                response.status(201).json({
+                                    result: 'OK',
+                                    elemento: elementoGuardado
+                                });
+                            });
+                    }); 
+                }); 
+            }
+        });
+  
+       
     }else{
         response.json(`End-point inválido`);
     }
   
-    fetch( queURL, {
-        method: 'POST',
-        body: JSON.stringify(nuevoElemento),
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${queToken}`
-        }   
-    } )
-        .then( response=>response.json() )
-        .then( json => {
-            //Mi logica de negocio
-            console.log( {
-                result: 'OK',
-                colecciones: queColeccion,
-                elemento: json.elemento
-            });
-            console.log(json.elemento._id);
-  
-            //guardamos reserva en bbdd agencia
-  
-            var collection = db.collection("reserva");
-            collection.save({_id: id(request.params.id),idReserva: json.elemento._id}, (err, elementoGuardado) =>{
-                if (err) return next(err);
-       
-                console.log(elementoGuardado);
-                response.status(201).json({
-                    result: 'OK',
-                    elemento: elementoGuardado
-                });
-            });
-    }); 
-  
  });
+ 
  
 
 app.post('/api/:proveedores/:colecciones/:id', auth,(request,response,next) =>{
