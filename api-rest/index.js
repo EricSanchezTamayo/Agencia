@@ -53,6 +53,22 @@ function auth(request,response,next){
     return next(new Error("Acceso no autorizado"));
 }
 
+//RESERVAS
+app.post('/api/reserva/:id', auth,(request,response,next) =>{
+    const queID = request.params.id;
+    var collection = db.collection("reserva");
+    
+    collection.save({'_id':queID}, (err, elementoGuardado) =>{
+        if (err) return next(err);
+
+        console.log(elementoGuardado);
+        response.status(201).json({
+            result: 'OK',
+            elemento: elementoGuardado
+        });
+    });
+});
+
 //Declaramos nuestras rutas y nuestros controladores
 app.get('/api', (request, response, next) =>{
     db.getCollectionNames((err, colecciones) => {
@@ -172,21 +188,7 @@ app.delete('/api/:colecciones/:id', auth, (request,response,next)=>{
     );
 });
 
-//RESERVAS
-app.post('/api/reserva/:id', auth,(request,response,next) =>{
-    const queID = request.params.id;
-    var collection = db.collection("reserva");
-    
-    collection.save({'_id':queID}, (err, elementoGuardado) =>{
-        if (err) return next(err);
 
-        console.log(elementoGuardado);
-        response.status(201).json({
-            result: 'OK',
-            elemento: elementoGuardado
-        });
-    });
-});
 
 
 //
