@@ -147,7 +147,7 @@ function verifyPassword(elemento, request,response,next){
                 newSaldo -= request.body.precio;
                 request.collection.update(
                     { _id: id(request.params.id)},
-                    { $set: {saldo: newSAldo}},
+                    { $set: {saldo: newSaldo}},
                     { safe: true,multi: false},
                     (err, resultado)=>{
                         if (err) return next(err);
