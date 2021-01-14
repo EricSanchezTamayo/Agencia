@@ -441,18 +441,18 @@ app.post('/api/:proveedores/:colecciones/:id/:idProv', auth,(request,response,ne
     var newURL;
     switch(request.params.proveedores){
         case "vuelo":
-            newURL = `${URL_WS_VUELO}` + '/vuelos' `/${request.params.idProv}/`;
+            newURL = `${URL_WS_VUELO}` + `/vuelos` +`/${request.params.idProv}/`;
             break;
         case "coche":
-            newURL = `${URL_WS_VEHICULO}` + '/coches' `/${request.params.idProv}/`;;
+            newURL = `${URL_WS_VEHICULO}` + `/coches` +`/${request.params.idProv}/`;;
             break;
         case "hotel":
-            newURL = `${URL_WS_HOTEL}` + '/hoteles' `/${request.params.idProv}/`;;
+            newURL = `${URL_WS_HOTEL}` + `/hoteles` +`/${request.params.idProv}/`;;
             break;
         default:
             response.json(`End-Point invalido: ${request.params.proveedores} no existe`);
     }
-
+//https://localhost:3100/api/banco/cuentas/60006dac871de70c595326b4/60007c5802acd613ad320d96
     if(queColeccion == "reserva"){
        
         const idUsuario = request.params.id;
@@ -467,13 +467,14 @@ app.post('/api/:proveedores/:colecciones/:id/:idProv', auth,(request,response,ne
             else{
                 console.log(elemento);
        
-                const newURL = queURL + `/${idProveedor}`;//para comprobar el proveedor si existe
+                //const newURL = queURL + `/${idProveedor}`;//para comprobar el proveedor si existe
   
                 fetch( newURL )//buscar en bbdd proveedor
                     .then( response=>response.json() )
                     .then( json => {
-                    console.log(json.elemento);
-                   
+                    
+                    console.log(json);
+                  
                     const nuevoElemento = {
                         idProveedor: request.params.idProv,
                         idUsuario: request.params.id,
